@@ -1,0 +1,11 @@
+# $File: //ASP/tec/epics/asubExec/trunk/asubExecSup/src/asubExec.dbd $
+# $Revision: #2 $
+# $DateTime: 2018/11/18 18:15:34 $
+# Last checked in by: $Author: starritt $
+#
+
+function (asubExecInit)
+function (asubExecProcess)
+variable (asubExecDebug, int)
+
+# end

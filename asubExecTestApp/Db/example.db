@@ -1,0 +1,97 @@
+# $File: //ASP/tec/epics/asubExec/trunk/asubExecTestApp/Db/example.db $
+# $Revision: #3 $
+# $DateTime: 2018/11/17 19:18:15 $
+# Last checked in by: $Author: starritt $
+#
+
+record (seq, "TEST:ASUB:EXEC:INIT") {
+    field (DESC, "")
+    field (SCAN, "Passive")
+    field (PINI, "YES")
+    field (SELM, "All")
+    field (DLY1, "0.5")
+    field (DOL1, "1")
+    field (LNK1,  "TEST:ASUB:EXEC.DISV")
+}
+
+record (calc, "TEST:ASUB:PRE") {
+    field (SCAN, "Passive")
+    field (INPA, "TEST:ASUB:PRE")
+    field (CALC, "(A+1)%20")
+    field (FLNK, "TEST:ASUB:EXEC")
+    field (LOPR, "0")
+    field (HOPR, "20")
+}
+
+record (calc, "TEST:ASUB:POST") {
+    field (SCAN, "Passive")
+    field (INPA, "TEST:ASUB:POST")
+    field (CALC, "(A+1)%20")
+    field (LOPR, "0")
+    field (HOPR, "20")
+}
+
+record (aSub, "TEST:ASUB:EXEC") {
+    field (FLNK, "TEST:ASUB:POST")
+    field (DESC, "Invokes example.py")
+    field (SCAN, "Passive")
+
+    info  (TIMEOUT, "1")
+    info  (EXEC, "example.py")
+    info  (ARG1, "20")
+    info  (ARG2, "two")
+    info  (ARG3, "tree")
+
+    # Set to default DISA - so that the record disabled at start
+    # up to inhibit initial CP processing
+    #
+    field (DISV, "0")  
+
+    field (INAM, "asubExecInit")
+    field (SNAM, "asubExecProcess")
+
+    field (INPA, "TEST:INPA CP")
+    field (FTA,  "DOUBLE")
+    field (NOA,  "6")
+
+    field (INPB, "TEST:INPB CP")
+    field (FTB,  "FLOAT")
+    field (NOB,  "5")
+
+    field (INPC, "TEST:INPC CP")
+    field (FTC,  "LONG")
+    field (NOC,  "4")
+
+    field (FTVA, "DOUBLE")
+    field (NOVA, "4")
+
+    field (FTVB, "LONG")
+    field (NOVB, "8")
+
+    field (FTVC, "SHORT")
+    field (NOVC, "6")
+}
+
+
+record (waveform, "TEST:INPA") {
+    field (DESC, "")
+    field (SCAN, "Passive")
+    field (NELM, "6")
+    field (FTVL, "DOUBLE")
+}
+
+record (waveform, "TEST:INPB") {
+    field (DESC, "")
+    field (SCAN, "Passive")
+    field (NELM, "5")
+    field (FTVL, "FLOAT")
+}
+
+record (waveform, "TEST:INPC") {
+    field (DESC, "")
+    field (SCAN, "Passive")
+    field (NELM, "4")
+    field (FTVL, "LONG")
+}
+
+# end
