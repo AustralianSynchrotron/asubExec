@@ -6,7 +6,10 @@ O.win32-x86/
 O.win32-x86-mingw/
 bin/
 lib/
+db/
+dbd/
 include/
+envPaths
 *~
 *.o
 *.exe
