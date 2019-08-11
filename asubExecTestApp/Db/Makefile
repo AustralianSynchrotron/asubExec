@@ -1,6 +1,6 @@
 # $File: //ASP/tec/epics/asubExec/trunk/asubExecTestApp/Db/Makefile $
-# $Revision: #1 $
-# $DateTime: 2018/11/03 17:51:37 $
+# $Revision: #2 $
+# $DateTime: 2019/08/11 16:22:23 $
 # Last checked in by: $Author: starritt $
 #
 
@@ -16,7 +16,11 @@ include $(TOP)/configure/CONFIG
 DB += example.db
 DB += mid_points.db
 
+#----------------------------------------------------
+# Create and install into <top>/bin/<epics_host_arch>
+#
 SCRIPTS += example.py
+SCRIPTS += null.py
 SCRIPTS += mid_points.py
 
 #----------------------------------------------------
@@ -26,6 +30,5 @@ SCRIPTS += mid_points.py
 include $(TOP)/configure/RULES
 #----------------------------------------
 #  ADD RULES AFTER THIS LINE
-
 
 # end

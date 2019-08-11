@@ -1,6 +1,6 @@
 # $File: //ASP/tec/epics/asubExec/trunk/asubExecSup/src/Makefile $
-# $Revision: #4 $
-# $DateTime: 2018/11/18 18:15:34 $
+# $Revision: #5 $
+# $DateTime: 2019/08/11 16:22:23 $
 # Last checked in by: $Author: starritt $
 #
 TOP=../..
@@ -20,6 +20,8 @@ USR_CFLAGS += -DUSE_TYPED_RSET
 LIBRARY_IOC += asubExec
 
 DBD += asubExec.dbd
+
+INC += asubExec.h
 
 # specify all source files to be compiled and added to the library
 #

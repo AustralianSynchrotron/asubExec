@@ -9,6 +9,7 @@ lib/
 db/
 dbd/
 include/
+creator.d/
 envPaths
 *~
 *.o
@@ -17,4 +18,5 @@ envPaths
 *.linux-x86
 *.local
 *.creator.user
+*.creator
 *.pro.user

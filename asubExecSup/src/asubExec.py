@@ -1,6 +1,6 @@
 # $File: //ASP/tec/epics/asubExec/trunk/asubExecSup/src/asubExec.py $
-# $Revision: #3 $
-# $DateTime: 2018/11/18 18:15:34 $
+# $Revision: #4 $
+# $DateTime: 2019/08/10 21:07:07 $
 # Last checked in by: $Author: starritt $
 #
 
@@ -13,23 +13,25 @@ class asubExecIO(object):
     """ asubExec IO utility class
         This class may be used to unpack data from standard input as provided
         by the asubExec module and pack the result to standard output.
+        It must be consistant with the asubExecDataType out of asubExec.h
         Still to address STRING and ENUM parameters.
     """
 
-    # from menuFtype.h
+
+    # from asubExecCommon.h
     #
-    menuFtypeSTRING = 0    # STRING
-    menuFtypeCHAR = 1      # CHAR
-    menuFtypeUCHAR = 2     # UCHAR
-    menuFtypeSHORT = 3     # SHORT
-    menuFtypeUSHORT = 4    # USHORT
-    menuFtypeLONG = 5      # LONG
-    menuFtypeULONG = 6     # ULONG
-    menuFtypeINT64 = 7     # INT64
-    menuFtypeUINT64 = 8    # UINT64
-    menuFtypeFLOAT = 9     # FLOAT
-    menuFtypeDOUBLE = 10   # DOUBLE
-    menuFtypeENUM = 11     # ENUM
+    asubExecTypeSTRING = 0    # STRING
+    asubExecTypeCHAR = 1      # CHAR
+    asubExecTypeUCHAR = 2     # UCHAR
+    asubExecTypeSHORT = 3     # SHORT
+    asubExecTypeUSHORT = 4    # USHORT
+    asubExecTypeLONG = 5      # LONG
+    asubExecTypeULONG = 6     # ULONG
+    asubExecTypeFLOAT = 7     # FLOAT
+    asubExecTypeDOUBLE = 8    # DOUBLE
+    asubExecTypeENUM = 9      # ENUM
+    asubExecTypeINT64 = 10    # INT64
+    asubExecTypeUINT64 = 11   # UINT64
 
     # This corresponds to INPA..INPU and OUTA..OUTU
     #
@@ -41,18 +43,18 @@ class asubExecIO(object):
     DataTypeSpec = namedtuple("DataTypeSpec", ('name', 'size', 'format', 'type'))
 
     menuMap = {
-        menuFtypeSTRING:  DataTypeSpec("STRING", 40, None,  str),
-        menuFtypeCHAR:    DataTypeSpec("CHAR",   1,  "=b",  int),
-        menuFtypeUCHAR:   DataTypeSpec("UCHAR",  1,  "=B",  int),
-        menuFtypeSHORT:   DataTypeSpec("SHORT",  2,  "=h",  int),
-        menuFtypeUSHORT:  DataTypeSpec("USHORT", 2,  "=H",  int),
-        menuFtypeLONG:    DataTypeSpec("LONG",   4,  "=i",  int),
-        menuFtypeULONG:   DataTypeSpec("ULONG",  4,  "=I",  int),
-        menuFtypeINT64:   DataTypeSpec("INT64",  8,  "=q",  int),
-        menuFtypeUINT64:  DataTypeSpec("UINT64", 8,  "=Q",  int),
-        menuFtypeFLOAT:   DataTypeSpec("FLOAT",  4,  "=f",  float),
-        menuFtypeDOUBLE:  DataTypeSpec("DOUBLE", 8,  "=d",  float),
-        menuFtypeENUM:    DataTypeSpec("ENUM",   2,  None,  int)
+        asubExecTypeSTRING:  DataTypeSpec("STRING", 40, None,  str),
+        asubExecTypeCHAR:    DataTypeSpec("CHAR",   1,  "=b",  int),
+        asubExecTypeUCHAR:   DataTypeSpec("UCHAR",  1,  "=B",  int),
+        asubExecTypeSHORT:   DataTypeSpec("SHORT",  2,  "=h",  int),
+        asubExecTypeUSHORT:  DataTypeSpec("USHORT", 2,  "=H",  int),
+        asubExecTypeLONG:    DataTypeSpec("LONG",   4,  "=i",  int),
+        asubExecTypeULONG:   DataTypeSpec("ULONG",  4,  "=I",  int),
+        asubExecTypeFLOAT:   DataTypeSpec("FLOAT",  4,  "=f",  float),
+        asubExecTypeDOUBLE:  DataTypeSpec("DOUBLE", 8,  "=d",  float),
+        asubExecTypeENUM:    DataTypeSpec("ENUM",   2,  None,  int),
+        asubExecTypeINT64:   DataTypeSpec("INT64",  8,  "=q",  int),
+        asubExecTypeUINT64:  DataTypeSpec("UINT64", 8,  "=Q",  int)
     }
 
     def __init__(self):

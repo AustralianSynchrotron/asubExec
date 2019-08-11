@@ -1,6 +1,6 @@
 # $File: //ASP/tec/epics/asubExec/trunk/asubExecTestApp/Db/mid_points.db $
-# $Revision: #2 $
-# $DateTime: 2018/11/17 19:18:15 $
+# $Revision: #3 $
+# $DateTime: 2019/08/10 21:07:07 $
 # Last checked in by: $Author: starritt $
 #
 
@@ -11,19 +11,19 @@ record (seq, "MIDPT:ASUB:EXEC:INIT") {
     field (SELM, "All")
     field (DLY1, "0.5")
     field (DOL1, "1")
-    field (LNK1,  "MIDPT:ASUB:EXEC.DISV")
+    field (LNK1, "MIDPT:ASUB:EXEC.DISV")
 }
 
 record (aSub, "MIDPT:ASUB:EXEC") {
     field (DESC, "Invokes mid_points.py")
     field (SCAN, "Passive")
 
-    info  (EXEC, "mid_points.py")
+    info (EXEC, "mid_points.py")
 
     # Set to default DISA - so that the record disabled at start
     # up to inhibit initial CP processing
     #
-    field (DISV, "0")  
+    field (DISV, "0")
 
     field (INAM, "asubExecInit")
     field (SNAM, "asubExecProcess")

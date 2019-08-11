@@ -1,29 +1,32 @@
 # $File: //ASP/tec/epics/asubExec/trunk/asubExecTestApp/Db/example.db $
-# $Revision: #3 $
-# $DateTime: 2018/11/17 19:18:15 $
+# $Revision: #5 $
+# $DateTime: 2019/08/11 16:22:23 $
 # Last checked in by: $Author: starritt $
 #
 
 record (seq, "TEST:ASUB:EXEC:INIT") {
-    field (DESC, "")
+    field (DESC, "Delayed enable")
     field (SCAN, "Passive")
     field (PINI, "YES")
     field (SELM, "All")
     field (DLY1, "0.5")
     field (DOL1, "1")
-    field (LNK1,  "TEST:ASUB:EXEC.DISV")
+    field (LNK1, "TEST:ASUB:EXEC.DISV")
 }
 
+
 record (calc, "TEST:ASUB:PRE") {
+    field (DESC, "Pre asubExec")
     field (SCAN, "Passive")
     field (INPA, "TEST:ASUB:PRE")
     field (CALC, "(A+1)%20")
-    field (FLNK, "TEST:ASUB:EXEC")
     field (LOPR, "0")
     field (HOPR, "20")
+    field (FLNK, "TEST:ASUB:EXEC")
 }
 
 record (calc, "TEST:ASUB:POST") {
+    field (DESC, "Post asubExec")
     field (SCAN, "Passive")
     field (INPA, "TEST:ASUB:POST")
     field (CALC, "(A+1)%20")
@@ -32,23 +35,22 @@ record (calc, "TEST:ASUB:POST") {
 }
 
 record (aSub, "TEST:ASUB:EXEC") {
-    field (FLNK, "TEST:ASUB:POST")
     field (DESC, "Invokes example.py")
     field (SCAN, "Passive")
 
-    info  (TIMEOUT, "1")
+    field (INAM, "asubExecInit")
+    field (SNAM, "asubExecProcess")
     info  (EXEC, "example.py")
-    info  (ARG1, "20")
-    info  (ARG2, "two")
+    info  (ARG1, "20") 
+    info  (ARG2, "two") 
     info  (ARG3, "tree")
+    info  (TIMEOUT, "5.0") 
 
     # Set to default DISA - so that the record disabled at start
     # up to inhibit initial CP processing
     #
-    field (DISV, "0")  
+    field (DISV, "0")
 
-    field (INAM, "asubExecInit")
-    field (SNAM, "asubExecProcess")
 
     field (INPA, "TEST:INPA CP")
     field (FTA,  "DOUBLE")
@@ -70,28 +72,57 @@ record (aSub, "TEST:ASUB:EXEC") {
 
     field (FTVC, "SHORT")
     field (NOVC, "6")
+
+    field (FLNK, "TEST:ASUB:POST")
 }
 
-
 record (waveform, "TEST:INPA") {
-    field (DESC, "")
+    field (DESC, "double[6]")
     field (SCAN, "Passive")
     field (NELM, "6")
     field (FTVL, "DOUBLE")
 }
 
 record (waveform, "TEST:INPB") {
-    field (DESC, "")
+    field (DESC, "float[5]")
     field (SCAN, "Passive")
     field (NELM, "5")
     field (FTVL, "FLOAT")
 }
 
 record (waveform, "TEST:INPC") {
-    field (DESC, "")
+    field (DESC, "int[4]")
     field (SCAN, "Passive")
     field (NELM, "4")
     field (FTVL, "LONG")
+}
+
+# -----------------------------------------------------------------
+#
+record (aSub, "TEST:NULL:EXEC") {
+    field (DESC, "Invokes null.py")
+    field (SCAN, "Passive")
+
+    field (INAM, "asubExecInit")
+    field (SNAM, "asubExecProcess")
+    info  (EXEC, "null.py")
+}
+
+record (aSub, "TEST:NONE:EXEC") {
+    field (DESC, "Invokes non_existant")
+    field (SCAN, "Passive")
+
+    field (INAM, "asubExecInit")
+    field (SNAM, "asubExecProcess")
+    info  (EXEC, "non_existant")
+}
+
+record (aSub, "TEST:NO_EXEC") {
+    field (DESC, "No Exec info")
+    field (SCAN, "Passive")
+
+    field (INAM, "asubExecInit")
+    field (SNAM, "asubExecProcess")
 }
 
 # end

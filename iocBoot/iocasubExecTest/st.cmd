@@ -1,8 +1,8 @@
 #!../../bin/linux-x86_64/asubExecTest
 
 # $File: //ASP/tec/epics/asubExec/trunk/iocBoot/iocasubExecTest/st.cmd $
-# $Revision: #3 $
-# $DateTime: 2018/11/18 18:15:34 $
+# $Revision: #5 $
+# $DateTime: 2019/08/11 16:22:23 $
 # Last checked in by: $Author: starritt $
 #
 
@@ -10,6 +10,7 @@
 #- everywhere it appears in this file
 
 < envPaths
+epicsEnvSet("PATH","${PATH}:${TOP}/bin/linux-x86_64")
 
 cd "${TOP}"
 
@@ -20,7 +21,7 @@ asubExecTest_registerRecordDeviceDriver pdbbase
 # Set amount of reporting 
 # Normally 0
 #
-var asubExecDebug 1
+var asubExecDebug 4
 
 ## Load record instances
 #
