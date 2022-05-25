@@ -1,12 +1,12 @@
 /* $File: //ASP/tec/epics/asubExec/trunk/asubExecSup/src/asubExec.c $
- * $Revision: #10 $
- * $DateTime: 2019/08/11 16:22:23 $
+ * $Revision: #11 $
+ * $DateTime: 2022/05/23 21:26:35 $
  * Last checked in by: $Author: starritt $
  *
  * The asubExec module is written to be used in conjunction with the aSub record.
  * It uses the fork() and execvp() paradigm to launch a child process.
  *
- * Copyright (c) 2018-2019  Australian Synchrotron
+ * Copyright (c) 2018-2022  Australian Synchrotron
  *
  * The asubExec module is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by the
@@ -115,11 +115,13 @@
 #include <stdbool.h>
 #include <string.h>
 #include <errno.h>
+#include <fcntl.h>
 #include <signal.h>
+#include <sys/time.h>
 #include <sys/types.h>
 #include <sys/wait.h>
+#include <time.h>
 #include <unistd.h>
-#include <fcntl.h>
 
 #include <aSubRecord.h>
 #include <alarm.h>
@@ -170,14 +172,14 @@ enum PipeIndex {
 
 typedef int HalfDuplexPipe[PIPE_SIZE];
 
-/* Private info alocated to each aSub record instance using this module.
+/* Private info allocated to each aSub record instance using this module.
  */
 typedef struct ExecInfo {
    aSubRecord* prec;              /* record reference */
    epicsThreadId thread_id;       /* monitor thread id */
    epicsEventId event;            /* monitor thread signal event */
    const char* argv[ARG_LENGTH];  /* arguments 0, 1 .. 9, 10 is NULL */
-   double timeOut;                /* max time in seconds that child process allowed to run */
+   double timeOut;                /* max time in seconds that a child process allowed to run */
    epicsTimeStamp endTime;        /* the end time */
    pid_t pid;                     /* child process' pid */
    int fdput;                     /* file desciptor for child process stdin  - we write to it */
@@ -187,14 +189,94 @@ typedef struct ExecInfo {
 } ExecInfo;
 
 
-static int asubExecDebug = 0;
-static bool iocRunning = true;
+static int asubExecDebug = 0;     /* exported to IOC shell */
+static bool iocIsRunning = true;
+
 
 /*------------------------------------------------------------------------------
- * We do not want to just sent the raw menuFtype values - these have been
+ */
+static char* now() {
+   struct timeval theTime;           // essentially secs and usecs.
+   struct tm bt;                     // broken-down time
+
+   gettimeofday(&theTime, NULL);
+   localtime_r(&theTime.tv_sec, &bt);
+
+   static char buffer [24];
+
+   int mSec = theTime.tv_usec / 1000;
+   snprintf(buffer, sizeof(buffer), "%02d:%02d:%02d.%03d",
+            bt.tm_hour, bt.tm_min, bt.tm_sec, mSec);
+   return buffer;
+}
+
+/*------------------------------------------------------------------------------
+ * Extend perror to be like printf
+ */
+static void perrorf (const char* function,
+                     const int line_no,
+                     const char* format, ...)
+{
+   static const char* red   = "\033[31;1m";
+   static const char* reset = "\033[00m";
+
+   char message1 [200];
+   char message2 [240];
+   va_list arguments;
+   va_start (arguments, format);
+   vsnprintf (message1, sizeof (message1), format, arguments);
+   va_end (arguments);
+   snprintf (message2, sizeof (message2), "%s asubExec::%s:%d %s%s%s",
+             now(), function, line_no, red, message1, reset);
+   perror (message2);
+}
+
+#define PERRORF(...) perrorf (   __FUNCTION__, __LINE__, __VA_ARGS__);
+
+
+/*------------------------------------------------------------------------------
+ * Wrapper function around printf/errlogPrintf.
+ */
+static void devprintf (const int requiredDebug,
+                       aSubRecord* prec,
+                       const char* function,
+                       const char* format, ...)
+{
+   if (asubExecDebug >= requiredDebug) {
+
+      char message [200];
+      va_list arguments;
+      va_start (arguments, format);
+      vsnprintf (message, sizeof (message), format, arguments);
+      va_end (arguments);
+
+      if (requiredDebug >= 2) {
+         // Console only.
+         //
+         printf ("%s (%s) asubExec.%s: %s", now(), prec->name, function, message);
+      } else {
+         // Errors and warnings: console and the IOC logger.
+         //
+         errlogPrintf ("%s (%s) %s: %s", now(), prec->name, function, message);
+      }
+   }
+}
+
+/*------------------------------------------------------------------------------
+ * Wrapper macros to devprintf.
+ * aSubRecord* prec  must be in scope.
+ */
+#define ERROR(...)    devprintf (0, prec,__FUNCTION__, __VA_ARGS__);
+#define WARN(...)     devprintf (1, prec,__FUNCTION__, __VA_ARGS__);
+#define INFO(...)     devprintf (2, prec,__FUNCTION__, __VA_ARGS__);
+#define DETAIL(...)   devprintf (3, prec,__FUNCTION__, __VA_ARGS__);
+
+
+/*------------------------------------------------------------------------------
+ * We do not want to just send the raw menuFtype values - these have been
  * extended and the under lying values changed from 3.15 to 7.0
- * Convert from EPICS menuFtype to asubExecDataType which we will ensure
- * alway has fixed values.
+ * Convert from EPICS menuFtype to asubExecDataType which we will ensure we
+ * alway have fixed values.
  */
 static asubExecDataType menuFtype2asubExecDataType (const menuFtype type)
 {
@@ -245,43 +327,20 @@ static menuFtype asubExecDataType2menuFtype (const asubExecDataType type)
 
 
 /*------------------------------------------------------------------------------
- * Extend perror to be like printf
- */
-static void perrorf (const char* function,
-                     const int line_no,
-                     const char* format, ...)
-{
-   static const char* red   = "\033[31;1m";
-   static const char* reset = "\033[00m";
-
-   char message1 [200];
-   char message2 [240];
-   va_list arguments;
-   va_start (arguments, format);
-   vsnprintf (message1, sizeof (message1), format, arguments);
-   va_end (arguments);
-   snprintf (message2, sizeof (message2), "asubExec::%s:%d %s%s%s", function,
-             line_no, red, message1, reset);
-   perror (message2);
-}
-
-#define PERRORF(...) perrorf (   __FUNCTION__, __LINE__, __VA_ARGS__);
-
-
-/*------------------------------------------------------------------------------
  * Perform and immediate process exit.
  */
-static void child_exit (const int status)
+static void childExit (const int status)
 {
-   /* Don't run our parent's atexit() handlers
+   /* Don't run our parent's atexit() handlers.
     */
    _exit (status);
 }
 
+
 /*------------------------------------------------------------------------------
  * Macro function - perform standard sanity checks.
- * Assumes function has an aSubRecord* prec parameter or similar
- * Auto declares ExecInfo* pExecInfo
+ * Assumes function has an aSubRecord* prec parameter or similar.
+ * NOTE: Auto declares ExecInfo* pExecInfo
  */
 #define STANDARD_CHECK(errorReturnValue)                                       \
 if (!prec) {                                                                   \
@@ -297,20 +356,21 @@ if (!pExecInfo) {                                                              \
 
 
 /*------------------------------------------------------------------------------
- * Initiate smooth thread shutdown
+ * Initiate a controlled thread shutdown.
  */
 static void shutdown (void* item)
 {
    aSubRecord* prec = (aSubRecord*) item;
    STANDARD_CHECK ();
-   iocRunning = false;
+   iocIsRunning = false;
    epicsEventSignal (pExecInfo->event);      /* wake up thread */
 }
 
 
 /*------------------------------------------------------------------------------
  * Creates and starts the child process.
- * Returns true iff successfull.
+ * Returns true if and only if successfull.
+ * NOTE: any child process std err output gets direted to the IOC shell console.
  */
 static bool startChildProcess (aSubRecord* prec)
 {
@@ -328,7 +388,7 @@ static bool startChildProcess (aSubRecord* prec)
    pExecInfo->fdget = -1;
    pExecInfo->exitCode = -1;
 
-   /* Create pipes to comunicate with child process
+   /* Create pipes to comunicate with child process.
     */
    status = pipe (input_data);
    if (status != 0) {
@@ -346,6 +406,7 @@ static bool startChildProcess (aSubRecord* prec)
     */
    pid = fork ();
    if (pid < 0) {
+      /* We have had a forking error. */
       PERRORF ("fork ()");
       return false;
    }
@@ -369,27 +430,27 @@ static bool startChildProcess (aSubRecord* prec)
       status = sigprocmask (SIG_SETMASK, &emptyMask, NULL);
       if (status != 0) {
          PERRORF ("sigprocmask ()");
-         child_exit (SETUP_EXIT_CODE);
+         childExit (SETUP_EXIT_CODE);
       }
 
       /* Connect standard IO to the pipes.
-       * Dupilcate file descriptors to standard in/out
+       * Duplicate file descriptors to standard in/out
        */
       fd = dup2 (input_data[PIPE_READ], STDIN_FILENO);
       if (fd != STDIN_FILENO) {
          PERRORF ("dup2 (stdin)");
-         child_exit (SETUP_EXIT_CODE);
+         childExit (SETUP_EXIT_CODE);
       }
 
       fd = dup2 (output_data[PIPE_WRITE], STDOUT_FILENO);
       if (fd != STDOUT_FILENO) {
          PERRORF ("dup2 (stdin)");
-         child_exit (SETUP_EXIT_CODE);
+         childExit (SETUP_EXIT_CODE);
       }
 
       /* from posix/osdProcess.c
        * close all open files except for STDIO so they will not be inherited
-       * by the spawned process. This include unused pipe descriptors.
+       * by the spawned process. This includes the unused pipe descriptors.
        *
        * We "know" standard file descriptors are 0, 1 and 2
        */
@@ -402,24 +463,21 @@ static bool startChildProcess (aSubRecord* prec)
        */
       pExecInfo->argv [ARG_LENGTH - 1] = NULL;  /* belts 'n' braces */
 
-      /* caste to get rid of that pesky warning.
+      /* Caste to get rid of that pesky warning.
        */
       status = execvp (pExecInfo->argv[0], (char *const *) pExecInfo->argv);
 
-      /* The exec call failed - it returned.
+      /* The exec call failed - it returned - this is unexpected.
        */
       PERRORF ("execvp (\"%s\", ...) -> %d", pExecInfo->argv[0], status);
-      child_exit (NO_EXEC_EXIT_CODE);    /** does not return - most important **/
+      childExit (NO_EXEC_EXIT_CODE);    /** does not return - most important **/
    }
 
    /* We are the parent. Save the child process id.
     */
    pExecInfo->pid = pid;
 
-   if (asubExecDebug > 0) {
-      printf ("asubExec %s: %s (pid=%d) starting\n",
-              prec->name, pExecInfo->argv[0], pExecInfo->pid);
-   }
+   INFO ("%s (pid=%d) starting\n", pExecInfo->argv[0], pExecInfo->pid);
 
    /* Save file pipe file descriptors and close unused pipe ends.
     */
@@ -436,7 +494,8 @@ static bool startChildProcess (aSubRecord* prec)
    }
 
    /* Set put/get files non blocking - we need to be able to kill the
-    * child process if it exceeds allowed time.
+    * child process if it exceeds allowed time and/or monitor IOC shutdown
+    * requests.
     */
    int flags;
 
@@ -448,7 +507,7 @@ static bool startChildProcess (aSubRecord* prec)
    flags |= O_NONBLOCK;
    flags = fcntl (pExecInfo->fdget, F_SETFL, flags);
 
-   /* Lastly calculated timeout/end time beyond which the child process
+   /* Lastly calculate timeout/end time beyond which the child process
     * will be terminated.
     */
    epicsTimeGetCurrent (&pExecInfo->endTime);
@@ -465,13 +524,15 @@ static void waitChildProcess (aSubRecord* prec, const bool immediate)
 {
    STANDARD_CHECK ();
 
-   const double dt = 0.05;
+   static const double dt = 0.005;
 
    /* Calculated term/kill times
+    * We allow 0.1s wiggle roon before issing SIGTERM, after which we allow a
+    * further 2 seconds for the process to terminate before issing a SIGKILL.
     */
    epicsTimeStamp termTime;
    epicsTimeStamp killTime;
-   bool termIssued;
+   bool sigTermIssued;
 
    epicsTimeGetCurrent (&termTime);
    epicsTimeAddSeconds (&termTime, 0.1);
@@ -479,13 +540,13 @@ static void waitChildProcess (aSubRecord* prec, const bool immediate)
    epicsTimeGetCurrent (&killTime);
    epicsTimeAddSeconds (&killTime, 2.1);
 
-   termIssued = false;
+   sigTermIssued = false;
 
    /* Monitor the child process
     */
-   while (iocRunning) {
+   while (iocIsRunning) {
       epicsThreadSleep (dt);
-      if (!iocRunning) break;
+      if (!iocIsRunning) break;
 
       /* Wait for process to change state.
        */
@@ -493,10 +554,9 @@ static void waitChildProcess (aSubRecord* prec, const bool immediate)
       pid_t pid = waitpid (pExecInfo->pid, &status, WNOHANG);
 
       if (pid == pExecInfo->pid) {
-         /* Child process is complete - simple
+         /* Child process is complete - simple.
           */
-         if (asubExecDebug > 2)
-            printf ("asubExec %s: child process complete\n", prec->name);
+         INFO ("child process complete\n");
          pExecInfo->exitCode = WEXITSTATUS (status);
          break;
       }
@@ -505,8 +565,7 @@ static void waitChildProcess (aSubRecord* prec, const bool immediate)
          /* an unexpected return value occured, either an error or another pid.
           */
          PERRORF ("waitpid");
-         errlogPrintf ("asubExec %s waitChildProcess:  waitpid (%d) => %d, status = %d\n",
-                       prec->name, pExecInfo->pid, pid, status);
+         ERROR ("waitpid (%d) => %d, status = %d\n", pExecInfo->pid, pid, status);
 
          pExecInfo->exitCode = WAITPID_EXIT_CODE;
          break;
@@ -514,8 +573,7 @@ static void waitChildProcess (aSubRecord* prec, const bool immediate)
 
       /* pid == 0 - still waiting for child process to complete.
        */
-      if (asubExecDebug > 4)
-         printf ("asubExec %s: child process still running\n", prec->name);
+      DETAIL ("child process still running\n");
 
       /* Has the allowed time expired ?
        */
@@ -523,46 +581,41 @@ static void waitChildProcess (aSubRecord* prec, const bool immediate)
       epicsTimeGetCurrent (&timeNow);
       if (epicsTimeLessThan (&timeNow, &termTime)) continue;
 
-      if (!termIssued) {
+      if (!sigTermIssued) {
          /* Timeout - shutdown child process.
           */
-         if (asubExecDebug > 2)
-            printf ("asubExec %s: child process timeout\n", prec->name);
+         INFO ("child process timeout\n");
 
          /* First ask nicely, then allow 2 seconds fopr orderly shutdown.
           */
-         if (asubExecDebug > 2)
-            printf ("asubExec %s: sending SIGTERM to pid %d\n", prec->name, pExecInfo->pid);
+         INFO ("sending SIGTERM to pid %d\n", pExecInfo->pid);
 
          status = kill (pExecInfo->pid, SIGTERM);
          pExecInfo->exitCode = TIMEOUT_EXIT_CODE;
 
-         termIssued = true;
+         sigTermIssued = true;
          continue;
       }
 
-      /* Allow a bit extra time before we issue a kill order
+      /* Allow a bit extra time/wiggle room before we issue a kill order
        */
       if (epicsTimeLessThan (&timeNow, &killTime)) continue;
 
       /* No more Mr. Nice Guy ...
        */
-      if (asubExecDebug > 2)
-         printf ("asubExec %s: sending SIGKILL to pid %d\n", prec->name, pExecInfo->pid);
+      INFO ("sending SIGKILL to pid %d\n", pExecInfo->pid);
 
       kill (pExecInfo->pid, SIGKILL);
       pExecInfo->exitCode = TIMEOUT_EXIT_CODE;
 
       waitpid (pExecInfo->pid, &status, 0);
 
-      if (asubExecDebug > 2)
-         printf ("asubExec %s: process (pid=%d) killed\n", prec->name, pExecInfo->pid);
+      INFO ("process (pid=%d) killed\n", pExecInfo->pid);
 
       pExecInfo->exitCode = TIMEOUT_EXIT_CODE;
       break;
    }
 }
-
 
 /*------------------------------------------------------------------------------
  * A wrapper around the write function to check for IOC termination, timeout
@@ -570,16 +623,17 @@ static void waitChildProcess (aSubRecord* prec, const bool immediate)
  */
 ssize_t writeWrapper (aSubRecord* prec, const void* buffer, const size_t count)
 {
+   static const double dt = 0.005;
+
    STANDARD_CHECK (-1);
 
-   ssize_t numBytes;
+   ssize_t numBytes;   /* result */
 
    while (true) {
       /* Has the IOC has stopped running ?
        */
-      if (!iocRunning) {
-         if (asubExecDebug > 2)
-            printf ("asubExec %s: IOC terminated\n", prec->name);
+      if (!iocIsRunning) {
+         INFO ("IOC terminated\n");
          numBytes = -1;
          break;
       }
@@ -589,8 +643,7 @@ ssize_t writeWrapper (aSubRecord* prec, const void* buffer, const size_t count)
       epicsTimeStamp timeNow;
       epicsTimeGetCurrent (&timeNow);
       if (epicsTimeGreaterThan (&timeNow, &pExecInfo->endTime)) {
-         if (asubExecDebug > 2)
-            printf ("asubExec %s: child process timeout\n", prec->name);
+         INFO ("child process timeout\n");
          numBytes = -2;
          break;
       }
@@ -613,10 +666,8 @@ ssize_t writeWrapper (aSubRecord* prec, const void* buffer, const size_t count)
 
       /* Sleep a while and try again.
        */
-      if (asubExecDebug > 4) {
-         printf ("asubExec %s: writeWrapper: epicsThreadSleep\n", prec->name);
-      }
-      epicsThreadSleep (pExecInfo->timeOut >= 60.0 ? 1.0 : 0.1);
+      DETAIL ("writeWrapper: epicsThreadSleep\n");
+      epicsThreadSleep (dt);
    }
 
    return numBytes;
@@ -629,16 +680,17 @@ ssize_t writeWrapper (aSubRecord* prec, const void* buffer, const size_t count)
  */
 ssize_t readWrapper (aSubRecord* prec, void* buffer, const size_t count)
 {
+   static const double dt = 0.005;
+
    STANDARD_CHECK (-1);
 
-   ssize_t numBytes;
+   ssize_t numBytes;   /* result */
 
    while (true) {
       /* Has the IOC has stopped running ?
        */
-      if (!iocRunning) {
-         if (asubExecDebug > 2)
-            printf ("asubExec %s: IOC terminated\n", prec->name);
+      if (!iocIsRunning) {
+         INFO ("IOC terminated\n");
          numBytes = -1;
          break;
       }
@@ -648,8 +700,7 @@ ssize_t readWrapper (aSubRecord* prec, void* buffer, const size_t count)
       epicsTimeStamp timeNow;
       epicsTimeGetCurrent (&timeNow);
       if (epicsTimeGreaterThan (&timeNow, &pExecInfo->endTime)) {
-         if (asubExecDebug > 2)
-            printf ("asubExec %s: child process timeout\n", prec->name);
+         INFO ("child process timeout\n");
          numBytes = -2;
          break;
       }
@@ -673,10 +724,8 @@ ssize_t readWrapper (aSubRecord* prec, void* buffer, const size_t count)
 
       /* Sleep a while and try again.
        */
-      if (asubExecDebug > 4) {
-         printf ("asubExec %s: readWrapper: epicsThreadSleep\n", prec->name);
-      }
-      epicsThreadSleep (pExecInfo->timeOut >= 60.0 ? 1.0 : 0.1);
+      DETAIL("epicsThreadSleep\n");
+      epicsThreadSleep (dt);
    }
 
    return numBytes;
@@ -684,28 +733,26 @@ ssize_t readWrapper (aSubRecord* prec, void* buffer, const size_t count)
 
 
 /*------------------------------------------------------------------------------
- * executeProcess does all the hard work - it runs asynchronously in the
- * aSub record's associated thread.
+ * Encodes input fields A, B, ... U and writes data to child process.
+ * Also encodes info about the output fields (type and max elements).
  */
-static bool executeProcess (aSubRecord* prec)
+static ssize_t encodeAndWriteInputs (aSubRecord* prec)
 {
-   STANDARD_CHECK (false);
-
-   bool result = startChildProcess (prec);
-   if (!result) return result;
-
    ssize_t total;
    ssize_t numBytes;
    int j;
-   int status;
 
-   /* First encode/buffer up all  = 0;the input and send to the child process.
-    * We write all the output data before reading any input data.
-    * The rules of the game are that the nonminated program should consume
-    * all its input before processing and generating any significant output.
-    * The pipes provide some leeway here.
-    */
    total = 0;
+
+   /* First house keeping - magic word and version.
+    */
+   numBytes = writeWrapper (prec, asubExecStx, strnlen(asubExecStx, 80));
+   total += numBytes;
+
+   const epicsUInt32 version = asubExecVersion;
+   numBytes = writeWrapper (prec, &version, sizeof(version));
+   total += numBytes;
+
    for (j = 0; j < NUMBER_IO_FIELDS; j++) {
       const menuFtype inputType = (&prec->fta)[j];
       const epicsInt16 extFieldType = menuFtype2asubExecDataType (inputType);
@@ -729,7 +776,7 @@ static bool executeProcess (aSubRecord* prec)
       total += numBytes;
    }
 
-   /* And encode the expected output format
+   /* And encode the expected output format.
     * Like above, but no data - just type and number of elements.
     */
    for (j = 0; j < NUMBER_IO_FIELDS; j++) {
@@ -748,19 +795,56 @@ static bool executeProcess (aSubRecord* prec)
       total += numBytes;
    }
 
-   status = close (pExecInfo->fdput);
-   if (status != 0) {
-      PERRORF ("close  (input_data [out])");
-   }
+   /* And lastly terminate data stream.
+    */
+   numBytes = writeWrapper (prec, asubExecEtx, strnlen(asubExecEtx, 80));
+   total += numBytes;
 
-   if (asubExecDebug > 2) {
-      printf ("asubExec %s: wrote %d bytes\n", prec->name, (int) total);
-   }
+   return total;
+}
 
-   /* Unpack the response
+/*------------------------------------------------------------------------------
+ * Reads data from the child process and decodes into fields VALA, VALB, ... VALU
+ */
+static ssize_t readAndDecodeOutputs(aSubRecord* prec)
+{
+   const size_t stxLen = strnlen(asubExecStx, 80);
+   const size_t etxLen = strnlen(asubExecEtx, 80);
+
+   ssize_t total;
+   ssize_t numBytes;
+   int j;
+
+   /* Unpack the response.
     */
    total = 0;
    numBytes = 0;
+
+   epicsUInt8 meta [80];
+   epicsUInt32 version;
+
+   numBytes = readWrapper (prec, &meta, stxLen);
+   total += numBytes;
+
+   DETAIL ("read meta data\n");
+
+   if (memcmp(&meta, asubExecStx, stxLen) != 0) {
+      ERROR ("read stx invalid\n");
+      return -1;
+   }
+
+   numBytes = readWrapper (prec, &version, sizeof(version));
+   total += numBytes;
+
+   /* Check version - skip minor version number \
+    */
+   if ((version & 0x00FFFF00) != (asubExecVersion & 0x00FFFF00)) {
+      ERROR ("version mis match, read %06X, expecting %06X\n",
+              version, asubExecVersion);
+      return -1;
+   }
+
+
    for (j = 0; j < NUMBER_IO_FIELDS; j++) {
       static epicsUInt8 discard[512 * 1024];    /* TODO: use lseek instead ? */
 
@@ -783,7 +867,7 @@ static bool executeProcess (aSubRecord* prec)
         */
        readIntType = asubExecDataType2menuFtype (readExtType);
        if (readIntType < 0 || readIntType >= menuFtype_NUM_CHOICES) {
-         errlogPrintf ("asubExec %s: read FTV%c type is invalid\n", prec->name, key);
+         ERROR ("read FTV%c type is invalid\n", key);
          numBytes = -1;
          break;
       }
@@ -814,15 +898,15 @@ static bool executeProcess (aSubRecord* prec)
          }
 
          if (readNumber != outputNumber) {
-            errlogPrintf ("asubExec %s: NOV%c size mis-match expected: %d, actual: %d\n",
-                          prec->name, key, outputNumber, readNumber);
+            WARN ("NOV%c size mis-match expected: %d, actual: %d\n",
+                  key, outputNumber, readNumber);
          }
 
       } else {
          /* type mis match - eventually we may caste, but for now just discard
           */
-         errlogPrintf ("asubExec %s: FTV%c mis-match expected: %d, actual %d\n",
-                       prec->name, key, outputType, readIntType);
+         ERROR ("FTV%c mis-match expected: %d, actual %d\n",
+                key, outputType, readIntType);
          epicsUInt32 skip = readNumber;
          numBytes = readWrapper (prec, discard, skip * elementSize);
          if (numBytes < 0)
@@ -831,11 +915,57 @@ static bool executeProcess (aSubRecord* prec)
       }
    }
 
+   if (numBytes >= 0) {
+      numBytes = readWrapper (prec, &meta, etxLen);
+      total += numBytes;
+
+      if (memcmp(meta, asubExecEtx, etxLen) != 0) {
+         ERROR ("read etx invalid\n");
+         return -1;
+      }
+   }
+
+   return total;
+}
+
+
+/*------------------------------------------------------------------------------
+ * executeProcess does all the hard work - it runs asynchronously in the
+ * aSub record's associated thread.
+ */
+static bool executeProcess (aSubRecord* prec)
+{
+   STANDARD_CHECK (false);
+
+   bool result = startChildProcess (prec);
+   if (!result) return result;
+
+   ssize_t total;
+   int status;
+
+   /* First encode/buffer up all the input and send to the child process.
+    * We write all the output data before reading any input data.
+    * The rules of the game are that the nonminated program/script should
+    * consume all its input before processing and generating any significant
+    * amount of output.  The pipes provide some leeway here.
+    */
+   total = encodeAndWriteInputs (prec);
+
+   status = close (pExecInfo->fdput);
+   if (status != 0) {
+      PERRORF ("close  (input_data [out])");
+   }
+
+   INFO ("wrote %d bytes\n", (int) total);
+
+   /* Unpack the response
+    */
+   total = readAndDecodeOutputs (prec);
+
    /* We expect all reads to be good and to have read the minimum number of
     * expected bytes.
     */
-   if ((numBytes < 0) ||
-       (total <= NUMBER_IO_FIELDS * (sizeof (epicsInt16) + sizeof (epicsUInt32)))) {
+   if (total <= NUMBER_IO_FIELDS * (sizeof (epicsInt16) + sizeof (epicsUInt32))) {
       /* Unexpected end of input, timeout or IOC terminate or insuffient data
        */
       PERRORF ("failure");
@@ -847,20 +977,12 @@ static bool executeProcess (aSubRecord* prec)
       PERRORF ("close  (output_data [in])");
    }
 
-   if (asubExecDebug > 2) {
-      printf ("asubExec %s: read %d bytes\n", prec->name, (int) total);
-   }
-
-   if (asubExecDebug > 0) {
-      printf ("asubExec %s: %s (pid=%d) complete\n", prec->name,
-              pExecInfo->argv[0], pExecInfo->pid);
-   }
+   INFO ("read %d bytes\n", (int) total);
+   INFO ("%s (pid=%d) complete\n", pExecInfo->argv[0], pExecInfo->pid);
 
    waitChildProcess (prec, false);
 
-   if (asubExecDebug > 2)
-      printf ("asubExec %s: process exit code: %d\n", prec->name,
-              pExecInfo->exitCode);
+   INFO ("process exit code: %d\n", pExecInfo->exitCode);
 
    return result;
 }
@@ -880,19 +1002,18 @@ static void executeThread (aSubRecord* prec)
    struct rset *rset = prec->rset;
 #endif
 
-   if (asubExecDebug > 2)
-      printf ("asubExec %s: executeThread starting...\n", prec->name);
+   INFO ("executeThread starting...\n");
 
-   while (iocRunning) {
+   /* thread runs indefinitly - use epicsAtExit test
+    */
+   while (iocIsRunning) {
 
-      if (asubExecDebug > 2)
-         printf ("asubExec %s: executeThread sleeping  ...\n", prec->name);
+      INFO ("executeThread sleeping  ...\n");
 
       epicsEventWait (pExecInfo->event);
-      if (!iocRunning) break;
+      if (!iocIsRunning) break;
 
-      if (asubExecDebug > 2)
-         printf ("asubExec %s: executeThread awake ...\n", prec->name);
+      INFO ("executeThread awake ...\n", now(), prec->name);
 
       bool status = executeProcess (prec);
       pExecInfo->status = status ? 0 : -1;
@@ -903,8 +1024,7 @@ static void executeThread (aSubRecord* prec)
       rset->process ((dbCommon *) prec);
    }
 
-   if (asubExecDebug > 2)
-      printf ("asubExec %s: executeThread terminated\n", prec->name);
+   INFO ("executeThread terminated\n");
 }
 
 
@@ -918,6 +1038,15 @@ static long asubExecInit (aSubRecord* prec)
    long status;
    ExecInfo* pExecInfo;
 
+   /* Always do the intro regardless of the asubExecDebug level.
+    */
+   {
+      int t = asubExecDebug;
+      asubExecDebug = 4;
+      INFO ("Starting\n");
+      asubExecDebug = t;
+   }
+
    /* Allocate and save memory for this record's private data.
     */
    pExecInfo = (ExecInfo *) callocMustSucceed (1, sizeof (ExecInfo), "asubExecInit");
@@ -930,7 +1059,7 @@ static long asubExecInit (aSubRecord* prec)
       pExecInfo->argv[j] = NULL;
    }
 
-   pExecInfo->timeOut = 3.2E+9;   /* default:  ~100 years - essentially for ever */
+   pExecInfo->timeOut = 60.0;   /* default: one minute */
    pExecInfo->pid = -1;
    pExecInfo->fdput = -1;
    pExecInfo->fdget = -1;
@@ -941,15 +1070,14 @@ static long asubExecInit (aSubRecord* prec)
    dbInitEntry (pdbbase, &entry);
    status = dbFindRecord (&entry, prec->name);
    if (status != 0) {
-      errlogPrintf ("asubExecInit %s: dbFindRecord can't find own record\n", prec->name);
+      ERROR ("dbFindRecord can't find own record\n");
       prec->pact = 1;
       return -1;
    }
 
    status = dbFindInfo (&entry, "EXEC");
    if ((status != 0) || !entry.pinfonode) {
-      errlogPrintf ("asubExecInit %s: dbFindInfo can't find:  info (%s, ...)\n",
-                    prec->name, "EXEC");
+      ERROR ("dbFindInfo can't find:  info (EXEC, ...)\n");
       prec->pact = 1;
       return -1;
    }
@@ -965,7 +1093,7 @@ static long asubExecInit (aSubRecord* prec)
       pExecInfo->argv[1] = epicsStrDup (prec->name);
    }
 
-   /* Now do args 2 through 9
+   /* Now do args 2 through 9.
     */
    for (j = 2; j <= NUMBER_OF_ARGS; j++) {
       char infoName [8];
@@ -982,20 +1110,31 @@ static long asubExecInit (aSubRecord* prec)
    status = dbFindInfo (&entry, "TIMEOUT");
    if ((status == 0) && entry.pinfonode) {
       char *endptr;
-      pExecInfo->timeOut = epicsStrtod (entry.pinfonode->string, &endptr);
+      double t;
+      t = epicsStrtod (entry.pinfonode->string, &endptr);
+      if (endptr == entry.pinfonode->string) {
+         WARN ("Invalid time specified, using default\n");
+      } else if (t < 0.1) {
+         WARN ("Negative/very small timeout specified, using 0.1 second\n");
+         pExecInfo->timeOut = 0.1;
+      } else {
+         pExecInfo->timeOut = t;  /* All okay  */
+      }
+      INFO ("timeout %.2fs\n", pExecInfo->timeOut);
    }
 
-   /* Use record name as task name
+   /* Use record name as the task name.
     */
    pExecInfo->thread_id = epicsThreadCreate     /*  */
-       (prec->name, epicsThreadPriorityMin,
+       (prec->name, epicsThreadPriorityMedium,
         epicsThreadGetStackSize (epicsThreadStackMedium),
         (EPICSTHREADFUNC) executeThread, prec);
 
+   /* Register IOC shut down in order to perform a clean exit.
+    */
    epicsAtExit (shutdown, prec);
 
-   if (asubExecDebug > 2)
-      printf ("asubExecInit %s: %s=%s\n", prec->name, infoNode->name, infoNode->string);
+   INFO ("%s=%s\n", infoNode->name, infoNode->string);
 
    return 0;
 }
@@ -1008,12 +1147,12 @@ static long asubExecProcess (aSubRecord* prec)
 
    long status;
 
-   if (asubExecDebug > 3)
-      printf ("asubExec %s: pact=%d\n", prec->name, prec->pact);
+   DETAIL ("pact=%d\n", prec->pact);
 
    if (prec->pact == FALSE) {
+      /* wake up thread */
       prec->pact = TRUE;
-      epicsEventSignal (pExecInfo->event);      /* wake up thread */
+      epicsEventSignal (pExecInfo->event);
       status = 0;
    } else {
       /* thread is complete */
@@ -1021,8 +1160,7 @@ static long asubExecProcess (aSubRecord* prec)
       prec->pact = FALSE;
    }
 
-   if (asubExecDebug > 3)
-      printf ("asubExec %s: pact=%d, status=%ld\n", prec->name, prec->pact, status);
+   DETAIL ("pact=%d, status=%ld\n",prec->pact, status);
 
    return status;
 }

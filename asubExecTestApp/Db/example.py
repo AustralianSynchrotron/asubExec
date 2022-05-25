@@ -1,8 +1,8 @@
 #!/bin/env python
 #
 # $File: //ASP/tec/epics/asubExec/trunk/asubExecTestApp/Db/example.py $
-# $Revision: #5 $
-# $DateTime: 2019/08/10 21:07:07 $
+# $Revision: #6 $
+# $DateTime: 2022/05/23 21:26:35 $
 # Last checked in by: $Author: starritt $
 #
 
@@ -31,7 +31,7 @@ def main():
     
     arguments = io.input_data
     sys.stderr.write("input:\n%s\n\n" % pprint.pformat (arguments, indent=2))
-#   sys.stderr.write("out spec:\n%s\n\n" % pprint.pformat (io.output_spec, indent=2))
+    sys.stderr.write("out spec:\n%s\n\n" % pprint.pformat (io.output_spec, indent=2))
 
     # Sumulate a long process time
     #

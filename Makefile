@@ -1,17 +1,20 @@
 # $File: //ASP/tec/epics/asubExec/trunk/Makefile $
-# $Revision: #1 $
-# $DateTime: 2018/11/03 17:51:37 $
+# $Revision: #2 $
+# $DateTime: 2020/10/31 16:04:52 $
 # Last checked in by: $Author: starritt $
 #
-# Description
+
 # Makefile at top of application tree
 #
 TOP = .
 include $(TOP)/configure/CONFIG
-DIRS := $(DIRS) $(filter-out $(DIRS), configure)
-DIRS := $(DIRS) $(filter-out $(DIRS), $(wildcard *Sup))
-DIRS := $(DIRS) $(filter-out $(DIRS), $(wildcard *App))
-DIRS := $(DIRS) $(filter-out $(DIRS), $(wildcard iocBoot))
+
+# Directories to build, any order
+DIRS += configure
+DIRS += $(wildcard *Sup)
+DIRS += $(wildcard *App)
+DIRS += $(wildcard *Top)
+DIRS += $(wildcard iocBoot)
 
 # The build order is controlled by these dependency rules:
 
@@ -22,6 +25,10 @@ $(foreach dir, $(filter-out configure, $(DIRS)), \
 # Any *App dirs depend on all *Sup dirs
 $(foreach dir, $(filter %App, $(DIRS)), \
     $(eval $(dir)_DEPEND_DIRS += $(filter %Sup, $(DIRS))))
+
+# Any *Top dirs depend on all *Sup and *App dirs
+$(foreach dir, $(filter %Top, $(DIRS)), \
+    $(eval $(dir)_DEPEND_DIRS += $(filter %Sup %App, $(DIRS))))
 
 # iocBoot depends on all *App dirs
 iocBoot_DEPEND_DIRS += $(filter %App,$(DIRS))

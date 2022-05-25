@@ -1,12 +1,12 @@
 /* $File: //ASP/tec/epics/asubExec/trunk/asubExecSup/src/asubExec.h $
- * $Revision: #1 $
- * $DateTime: 2019/08/10 21:07:07 $
+ * $Revision: #2 $
+ * $DateTime: 2022/05/23 21:26:35 $
  * Last checked in by: $Author: starritt $
  *
  * The asubExec module is written to be used in conjunction with the aSub record.
  * It uses the fork() and execvp() paradigm to launch a child process.
  *
- * Copyright (c) 2018-2019  Australian Synchrotron
+ * Copyright (c) 2018-2022  Australian Synchrotron
  *
  * The asubExec module is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by the
@@ -35,6 +35,19 @@
 #ifndef ASUB_EXEC_H
 #define ASUB_EXEC_H 1
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+/* Version 1.2.2
+ */
+#define asubExecVersion  0x00010202
+
+/* Start and end text sent between EPICS IOC and the spanewd purpose.
+ */
+#define asubExecStx "asubExec"
+#define asubExecEtx "eod\n"
+
 /* Add new values to the end of this list.
  * Based on EPICS base 7 menuFtype.h
  * We define own type in order to allow compatibility with earlier
@@ -56,5 +69,9 @@ typedef enum asubExecDataType {
    asubExecTypeUINT64,                 /* UINT64 */
    NUMBER_OF_FIELD_TYPES               /* Must be last */
 } asubExecDataType;
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif  /* ASUB_EXEC_H */

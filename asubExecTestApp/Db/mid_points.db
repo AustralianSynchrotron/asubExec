@@ -1,6 +1,6 @@
 # $File: //ASP/tec/epics/asubExec/trunk/asubExecTestApp/Db/mid_points.db $
-# $Revision: #3 $
-# $DateTime: 2019/08/10 21:07:07 $
+# $Revision: #4 $
+# $DateTime: 2022/05/25 19:56:35 $
 # Last checked in by: $Author: starritt $
 #
 
@@ -35,6 +35,18 @@ record (aSub, "MIDPT:ASUB:EXEC") {
     field (OUTA, "MIDPT:OUTA PP")
     field (FTVA, "DOUBLE")
     field (NOVA, "7")
+
+    field (OUTB, "MIDPT:OUTA PP")
+    field (FTVB, "LONG")
+    field (NOVB, "5")
+
+    field (OUTC, "MIDPT:OUTA PP")
+    field (FTVC, "CHAR")
+    field (NOVC, "5")
+
+    field (OUTD, "MIDPT:OUTA PP")
+    field (FTVD, "STRING")
+    field (NOVD, "5")
 }
 
 record (waveform, "MIDPT:INPA") {
@@ -49,6 +61,27 @@ record (waveform, "MIDPT:OUTA") {
     field (SCAN, "Passive")
     field (NELM, "7")
     field (FTVL, "DOUBLE")
+}
+
+record (waveform, "MIDPT:OUTB") {
+    field (DESC, "Integer out")
+    field (SCAN, "Passive")
+    field (NELM, "5")
+    field (FTVL, "LONG")
+}
+
+record (waveform, "MIDPT:OUTC") {
+    field (DESC, "Char out")
+    field (SCAN, "Passive")
+    field (NELM, "5")
+    field (FTVL, "CHAR")
+}
+
+record (waveform, "MIDPT:OUTD") {
+    field (DESC, "String out")
+    field (SCAN, "Passive")
+    field (NELM, "5")
+    field (FTVL, "STRING")
 }
 
 # end
